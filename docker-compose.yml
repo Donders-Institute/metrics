@@ -1,0 +1,71 @@
+version: '3.1'
+
+services:
+
+  prometheus:
+    hostname: prometheus
+    user: root
+    image: quay.io/prometheus/prometheus:v2.0.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention=5y", "--web.console.libraries=/etc/prometheus/console_libraries", "--web.console.templates=/etc/prometheus/consoles", "--web.enable-lifecycle"]
+    volumes:
+      - /mnt/docker/data/metrics/prometheus2/data:/prometheus
+      - /mnt/docker/data/metrics/prometheus2/config/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - 9090:9090
+    deploy:
+      placement:
+        constraints: [node.labels.function == production]
+    depends_on:
+      - pushgateway
+
+  pushgateway:
+    hostname: pushgateway
+    image: prom/pushgateway
+    ports:
+      - 9091:9091
+    deploy:
+      placement:
+        constraints: [node.labels.function == production]
+
+  opentsdb:
+    hostname: opentsdb
+    build:
+      context: ./docker/opentsdb
+    image: opentsdb
+    #image: docker-registry.dccn.nl:5000/opentsdb:2.3.0
+    volumes:
+      - /mnt/docker/data/metrics/opentsdb/data:/data/hbase
+      - /mnt/docker/data/metrics/opentsdb/config/opentsdb.conf:/etc/opentsdb.conf
+    ports:
+      - 9242:4242
+      - 60030:60030
+    deploy:
+      placement:
+        constraints: [node.labels.function == production]
+
+  grafana:
+    hostname: grafana
+    image: grafana/grafana 
+    volumes:
+      - /mnt/docker/data/metrics/grafana/data:/var/lib/grafana 
+    secrets:
+      - ldap.cfg
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_DOMAIN=stager.dccn.nl
+      - GF_SERVER_ROOT_URL=https://%(domain)s/m
+      - GF_AUTH_LDAP_ENABLED=true
+      - GF_AUTH_LDAP_CONFIG_FILE=/run/secrets/ldap.cfg
+      - GF_AUTH_ALLOW_SIGN_UP=true
+    ports:
+      - 9080:3000
+    deploy:
+      placement:
+        constraints: [node.labels.function == production]
+    depends_on:
+      - prometheus
+      - opentsdb
+
+secrets:
+    ldap.cfg:
+      file: /mnt/docker/data/metrics/grafana/config/ldap.cfg
