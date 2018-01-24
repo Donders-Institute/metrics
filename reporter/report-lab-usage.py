@@ -13,21 +13,8 @@ from argparse import ArgumentParser
 from HTMLParser import HTMLParser
 
 # load utility libraries
-from utils.Common import getConfig, getMySQLConnector
-
-class Callback:
-    def __init__(self):
-        self.header   = ''
-        self.contents = ''
-
-    def header_callback(self, buf):
-        self.header = self.header + buf
-
-    def body_callback(self, buf):
-        self.contents = self.contents + buf
-
-    def progress_callback(self, download_t, download_d, upload_t, upload_d):
-        logging.info('uploaded %d:%d', upload_d, upload_t)
+from utils.Common import getConfig, getMySQLConnector, pushMetric
+from utils.Common import CURLCallback as Callback
 
 # create a subclass and override the handler methods
 class LabUsageHTMLParser(HTMLParser):
@@ -114,8 +101,6 @@ def getLabUsageReport(beg=None, end=None):
     if not beg or not end:
         return data
 
-    t = Callback()
-
     # TODO: make URL endpoint configurable
     url="http://intranet.donders.ru.nl/apps/projects/projects/report_labusage/%s/%s" % (beg, end)
 
@@ -144,30 +129,6 @@ def getLabUsageReport(beg=None, end=None):
     p.feed(htmlDoc)
 
     return p.items
-
-def pushMetric(m):
-    '''push metrics to OpenTSDB'''
-
-    # TODO: make URL endpoint configurable
-    url="http://stager.dccn.nl:9242/api/put"
-
-    t = Callback()
-    c = pycurl.Curl()
-    c.setopt(c.URL, url)
-    c.setopt(c.CONNECTTIMEOUT, 3)
-    c.setopt(c.TIMEOUT, 10)
-    c.setopt(c.HEADERFUNCTION, t.header_callback)
-    c.setopt(c.WRITEFUNCTION , t.body_callback)
-    c.setopt(c.CUSTOMREQUEST , 'POST')
-    c.setopt(c.POSTFIELDSIZE , len(m))
-    c.setopt(c.POSTFIELDS    , m)
-    c.perform()
-    code = c.getinfo(pycurl.HTTP_CODE)
-    c.close()
-
-    if code >= 400:
-        logging.error('%s', t.header)
-        logging.error('%s', t.contents)
 
 def labelize(s):
     '''replace disallowed label characters for OpenTSDB'''
@@ -414,7 +375,7 @@ if __name__ == "__main__":
 
             if not args.dryrun:
                 logging.debug('%s: %s', t, json.dumps(m))
-                pushMetric( json.dumps(m) )
+                pushMetric( cfg.get('OpenTSDB','URL_PUSH'), json.dumps(m) )
             else:
                 logging.info('%s: %s', t, json.dumps(m))
 
@@ -428,6 +389,6 @@ if __name__ == "__main__":
                 g['metric'] = args.tsname_free
                 if not args.dryrun:
                     logging.debug('%s: %s', d, json.dumps(g))
-                    pushMetric( json.dumps(g) )
+                    pushMetric( cfg.get('OpenTSDB','URL_PUSH'), json.dumps(g) )
                 else:
                     logging.info('%s: %s', d, json.dumps(g))

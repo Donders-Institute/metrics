@@ -12,6 +12,7 @@ import locale
 import ConfigParser
 import StringIO
 import gzip
+import pycurl
 
 import sys
 import os
@@ -66,6 +67,42 @@ def getMySQLConnector(host,uid,passwd,db):
 
     return cnx
 
+# a class for curl callback 
+class CURLCallback:
+    def __init__(self):
+        self.header   = ''
+        self.contents = ''
+
+    def header_callback(self, buf):
+        self.header = self.header + buf
+
+    def body_callback(self, buf):
+        self.contents = self.contents + buf
+
+    def progress_callback(self, download_t, download_d, upload_t, upload_d):
+        logging.info('uploaded %d:%d', upload_d, upload_t)
+
+def pushMetric(url, m):
+    '''POST metric data'''
+
+    t = CURLCallback()
+    c = pycurl.Curl()
+    c.setopt(c.URL, url)
+    c.setopt(c.CONNECTTIMEOUT, 3)
+    c.setopt(c.TIMEOUT, 10)
+    c.setopt(c.HEADERFUNCTION, t.header_callback)
+    c.setopt(c.WRITEFUNCTION , t.body_callback)
+    c.setopt(c.CUSTOMREQUEST , 'POST')
+    c.setopt(c.POSTFIELDSIZE , len(m))
+    c.setopt(c.POSTFIELDS    , m)
+    c.perform()
+    code = c.getinfo(pycurl.HTTP_CODE)
+    c.close()
+
+    if code >= 400:
+        logging.error('%s', t.header)
+        logging.error('%s', t.contents)
+
 # a class make the dictionary hashable 
 class HashableDict(dict):
     def __hash__(self):
@@ -92,6 +129,8 @@ def getConfig(config_file='config.ini'):
     '''
 
     default_cfg = {
+        # OpenTSDB config
+        'URL_PUSH' : '',
         # Torque configuration 
         'DB_DATA_DIR'        : '/var/log/torque/torquemon_db',
         'TORQUE_LOG_DIR'     : '/home/common/torque/job_logs',

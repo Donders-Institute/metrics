@@ -11,39 +11,8 @@ from argparse import ArgumentParser
 from HTMLParser import HTMLParser
 
 # load utility libraries
-from utils.Common import getConfig, getMySQLConnector
-
-class Callback:
-    def __init__(self):
-        self.header   = ''
-        self.contents = ''
-
-    def header_callback(self, buf):
-        self.header = self.header + buf
-
-    def body_callback(self, buf):
-        self.contents = self.contents + buf
-
-    def progress_callback(self, download_t, download_d, upload_t, upload_d):
-        logging.info('uploaded %d:%d', upload_d, upload_t)
-
-def pushMetric(m):
-    url="http://stager.dccn.nl:9242/api/put"
-    t = Callback()
-    c = pycurl.Curl()
-    c.setopt(c.URL, url)
-    c.setopt(c.HEADERFUNCTION, t.header_callback)
-    c.setopt(c.WRITEFUNCTION , t.body_callback)
-    c.setopt(c.CUSTOMREQUEST , 'POST')
-    c.setopt(c.POSTFIELDSIZE , len(m))
-    c.setopt(c.POSTFIELDS    , m)
-    c.perform()
-    code = c.getinfo(pycurl.HTTP_CODE)
-    c.close()
-
-    if code >= 400:
-        logging.error('%s', t.header)
-        logging.error('%s', t.contents)
+from utils.Common import getConfig, getMySQLConnector, pushMetric
+from utils.Common import CURLCallback as Callback
 
 def getFilerUsageReport(cfg, fromDate, toDate):
 
@@ -163,6 +132,6 @@ if __name__ == "__main__":
             mlist[-1]['tags']   = { 'type': k }
         if not args.dryrun:
             logging.debug('%s', json.dumps(mlist))
-            pushMetric( json.dumps(mlist) )
+            pushMetric( cfg.get('OpenTSDB','URL_PUSH'), json.dumps(mlist) )
         else:
             logging.info('%s', json.dumps(mlist))
