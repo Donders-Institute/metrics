@@ -12,9 +12,8 @@ from datetime import timedelta
 from argparse import ArgumentParser
 from HTMLParser import HTMLParser
 
-# load utility functions
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import util
+# load utility libraries
+from utils.Common import getConfig, getMySQLConnector
 
 class Callback:
     def __init__(self):
@@ -264,7 +263,7 @@ def getProjectGroupMap(cfg):
     db_pass = cfg.get('PDB','PDB_PASSWORD')
     db_name = cfg.get('PDB','PDB_DATABASE')
 
-    cnx = util.getMySQLConnector(db_host, db_uid, db_pass, db_name)
+    cnx = getMySQLConnector(db_host, db_uid, db_pass, db_name)
 
     if not cnx:
         logging.error('Project DB connection failed')
@@ -365,7 +364,7 @@ if __name__ == "__main__":
     args = parg.parse_args()
 
     # load configuration parameters
-    cfg = util.getConfig( args.config )
+    cfg = getConfig( args.config )
 
     logging.basicConfig(format='[%(levelname)-8s] %(message)s',level=logging.__dict__[args.verbose.upper()])
 
