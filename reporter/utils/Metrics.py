@@ -3,6 +3,7 @@ from prometheus_client import Gauge, Counter, Summary, Histogram
 from prometheus_client.core import GaugeMetricFamily
 from prometheus_client import write_to_textfile, push_to_gateway
 from prometheus_client.exposition import basic_auth_handler
+from prometheus_client.parser import text_string_to_metric_families
 
 import potsdb
 import datetime
@@ -189,6 +190,29 @@ class ClusterStatistics:
         """export metrics in the registry to a file"""
         write_to_textfile(fpath, self.registry)
         return
+        
+    def getMetrics(self, name, **labels):
+        """get latest value of a given metrics with name and labels"""
+        
+        t = CURLCallback()
+        c = pycurl.Curl()
+        c.setopt(c.URL, "http://%s:%s/metrics" % (self.PROMETHEUS_GW_HOST, self.PROMETHEUS_GW_PORT))
+        c.setopt(c.CONNECTTIMEOUT, 3)
+        c.setopt(c.TIMEOUT, 10)
+        c.setopt(c.HEADERFUNCTION, t.header_callback)
+        c.setopt(c.WRITEFUNCTION , t.body_callback)
+        c.setopt(c.CUSTOMREQUEST , 'GET')
+        c.perform()
+        code = c.getinfo(pycurl.HTTP_CODE)
+        c.close()
+        
+        v = None
+        for family in text_string_to_metric_families(metrics):
+            for sample in family.samples:
+                print("Name: {0} Labels: {1} Value: {2}".format(*sample))
+                if sample[0] == name and sample[1] == labels:
+                    v = sample[2]
+        return v
 
     def pushMetrics(self, endpoint=None, **kwargs):
         """push metrics in the registry to the prometheus gateway"""
