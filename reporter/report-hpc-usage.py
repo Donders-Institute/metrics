@@ -45,7 +45,7 @@ if __name__ == "__main__":
     args = parg.parse_args()
 
     logger = getMyLogger(os.path.basename(__file__))
-    
+
     vlv = int(args.verbose)
     lv  = logging.ERROR
     if vlv < 0:
@@ -55,25 +55,32 @@ if __name__ == "__main__":
     elif vlv >= 2:
         lv = logging.DEBUG
 
+    logger.setLevel(lv)
+
+    c = getConfig(args.fconfig)
+
     m = ClusterStatistics(config=args.fconfig, lv=lv)
     m.collectMetrics()
-    m.pushMetrics()
 
-    # email notification
+    # email notification (this should be done before pushing the new metrics
     if args.sendmail:
         labels = {}
         mprev = m.getMetrics(name='hpc_stat_node_status', **labels)
+
         # get list of nodes from previous data that are:
         # - not in 'down' state
         # - in the list of the currently down nodes
-        nlist = filter( lambda s:s[2] != -1 and s[1]['host'] in m.nodes_down, mprev )
+        nlist = filter( lambda s:int(s[2]) != -1 and s[1]['host'] in m.nodes_down, mprev )
 
         logger.debug('notification for nodes are just down: %d nodes' % len(nlist))
 
         if len(nlist) > 0:
             subject = '[Torquemon] compute nodes DOWN!!'
-            msg = '\n'.join(nlist)
-            sendEmailNotification('admin@dccn-l034.dccn.nl', NOTIFICATION_EMAILS, subject, msg)
+            msg = '\n'.join(map(lambda x:x[1]['host'], nlist))
+            sendEmailNotification('admin@dccn-l018.dccn.nl', c.get('TorqueTracker','NOTIFICATION_EMAILS').split(','), subject, msg)
+
+    # push metrics 
+    m.pushMetrics()
 
     m = MatlabLicenseAccounting(config=args.fconfig, lv=lv)
     m.collectMetrics()

@@ -285,7 +285,7 @@ class ClusterStatistics:
             if n.stat in n_status.keys(): 
                 g_node_status.labels(host=n.host).set( n_status[n.stat] )
                 if n_status[n.stat] == n_status['down']:
-                    nodes_down.append(n.host)
+                    self.nodes_down.append(n.host)
             else:
                 g_node_status.labels(host=n.host).set( n_status['other'] )
 
