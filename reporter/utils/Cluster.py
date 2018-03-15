@@ -89,7 +89,8 @@ def get_complete_jobs(logdir, date, debug=False):
         # open xml file and do some fixing
         temp = open(myfile, 'r').read()
         # fix incorrect closing tag
-        temp = temp.replace('JobId', 'Job_Id')
+        #temp = temp.replace('JobId', 'Job_Id')
+        temp = re.sub(r'<Variable_List>.*</Variable_List>', '', temp.replace('JobId', 'Job_Id'))
         # fix the fact that there is no overarching beginning and end tag.
         temp = '<data>\n' + temp + '\n</data>'
  
@@ -381,6 +382,7 @@ def get_cluster_node_properties(debug=False):
         re_host = re.compile('^(\S+)$')
         re_stat = re.compile('^\s+state\s+\=\s+(\S+)$')
         re_np   = re.compile('^\s+np\s+\=\s+(\d+)$')
+        re_ngp  = re.compile('^\s+gpus\s+\=\s+(\d+)$')
         re_prop = re.compile('^\s+properties\s+\=\s+(\S+)$')
         re_mem  = re.compile('^ram(\d+)gb$')
         re_net  = re.compile('^network(\S+)$')
@@ -407,6 +409,7 @@ def get_cluster_node_properties(debug=False):
                          mem           = 1,           # memory total
                          memleft       = 1,           # memory left
                          memleft_c     = 1,           # avg. memory left per core
+                         ngpus         = 0,           # number of GPUs
                          net           = '',          # network connectivity
                          interactive   = False,       # node allowing interactive jobs 
                          matlab        = False,       # node allowing matlab batch jobs 
@@ -458,6 +461,11 @@ def get_cluster_node_properties(debug=False):
                 n.vgl         = 'vgl'         in n.props
                 n.batch       = 'batch'       in n.props
 
+                continue
+                
+            m = re_ngp.match(l)
+            if m:
+                n.ngpus = int( m.group(1) )
                 continue
 
             if l == '':
@@ -599,3 +607,36 @@ def get_qstat_jobs(s_cmd, node_domain_suffix='dccn.nl', debug=False):
                 jlist[j.jstat].append(j)
 
     return jlist
+
+def get_matlab_license_usage(s_cmd, node_domain_suffix='dccn.nl', debug=False):
+    """get matlab license usage of DCCN"""
+    
+    licenses = []
+        
+    re_pkg_header = re.compile('^package:\s+(\S+)\s+.*')
+    re_lic = re.compile('^([a-z]+)\s+(\S+)\s+.*')
+
+    s = Shell(debug=False)
+    rc, output, m = s.cmd1(s_cmd, allowed_exit=[0,255], timeout=300)    
+    
+    pkg = None
+    i = 0
+    for l in output.split('\n'):
+        
+        l.strip()
+        m = re_pkg_header.match(l)
+        
+        if m:
+            pkg = m.group(1)
+            continue
+            
+        m = re_lic.match(l)
+        if not m:
+            continue
+
+        u = m.group(1)
+        h = '%s.%s' % (m.group(2), node_domain_suffix)
+        licenses.append( Job(jid=i, package=pkg, host=h, uid=u) )
+        i += 1
+        
+    return licenses

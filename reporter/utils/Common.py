@@ -137,12 +137,18 @@ def getConfig(config_file='config.ini'):
         'TORQUE_BATCH_QUEUES': 'short,medium,long',
         'BIN_QSTAT_ALL'      : 'cluster-qstat',
         'BIN_FSHARE_ALL'     : 'cluster-fairshare',
+        'BIN_CLUSTER_MATLAB' : 'cluster-matlab',
         'NOTIFICATION_EMAILS': '',
         # Project database interface
         'PDB_USER'         : '',
         'PDB_PASSWORD'     : '',
         'PDB_HOST'         : '',
-        'PDB_DATABASE'     : ''
+        'PDB_DATABASE'     : '',
+        # TSDB endpoints
+        'OPENTSDB_HOST'      : 'opentsdb',
+        'OPENTSDB_PORT'      : '9042',
+        'PROMETHEUS_GW_HOST' : 'gw-prometheus',
+        'PROMETHEUS_GW_PORT' : '9091'
     }
 
     config = ConfigParser.SafeConfigParser(default_cfg)
