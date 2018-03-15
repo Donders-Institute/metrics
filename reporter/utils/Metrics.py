@@ -205,14 +205,15 @@ class ClusterStatistics:
         c.perform()
         code = c.getinfo(pycurl.HTTP_CODE)
         c.close()
-        
-        v = None
-        for family in text_string_to_metric_families(metrics):
+
+        self.logger.debug('dump metrics from %s (HTTP CODE: %d)' % (self.PROMETHEUS_GW_HOST, code))
+
+        m = []
+        for family in text_string_to_metric_families(t.contents):
             for sample in family.samples:
-                print("Name: {0} Labels: {1} Value: {2}".format(*sample))
-                if sample[0] == name and sample[1] == labels:
-                    v = sample[2]
-        return v
+                if sample[0] == name and all(item in sample[1].items() for item in labels.items()):
+                    m.append(sample)
+        return m
 
     def pushMetrics(self, endpoint=None, **kwargs):
         """push metrics in the registry to the prometheus gateway"""
@@ -238,6 +239,7 @@ class ClusterStatistics:
         g_mem_usage  = Gauge('hpc_stat_mem_usage' , 'bytes of used memory per node per queue', ['host', 'queue'], registry=self.registry)
         
         # metrics for node specification
+        g_node_status = Gauge('hpc_stat_node_status', 'node status (-1:down, 0:offline, 1:job-exclusive, 2:free, 3: other)', ['host'], registry=self.registry)
         g_core_total = Gauge('hpc_stat_core_total', 'number of total cores per node', ['host'], registry=self.registry)
         g_mem_total  = Gauge('hpc_stat_mem_total' , 'bytes of total memory per node', ['host'], registry=self.registry)
         g_network_total = Gauge('hpc_stat_network_total' , 'Gbits of network bandwidth', ['host'], registry=self.registry)
@@ -248,6 +250,13 @@ class ClusterStatistics:
 
         jobs = get_qstat_jobs(s_cmd=self.BIN_QSTAT_ALL)
         nodes = get_cluster_node_properties()
+
+        # TODO: make it more transparent
+        n_status = { 'down'          : -1,
+                     'offline'       :  0,
+                     'job-exclusive' :  1,
+                     'free'          :  2,
+                     'other'         :  3 }
 
         # TODO: make it configurable
         q_cat = ['matlab','batch','vgl','interact','other']
@@ -268,6 +277,11 @@ class ClusterStatistics:
             g_mem_total.labels(host=n.host).set( n.mem * 1000000000 )
             g_network_total.labels(host=n.host).set( int(n.net.replace('network','').replace('GigE','')) )
             g_gpu_total.labels(host=n.host).set( n.ngpus )
+
+            if n.stat in n_status.keys(): 
+                g_node_status.labels(host=n.host).set( n_status[n.stat] )
+            else:
+                g_node_status.labels(host=n.host).set( n_status['other'] )
 
             # add extra attribute to match the interactive queue names defined in q_cat
             n.__dict__['interact'] = n.__dict__['interactive']
