@@ -185,6 +185,9 @@ class ClusterStatistics:
         self.PROMETHEUS_GW_PORT = c.get('MetricsPusher', 'PROMETHEUS_GW_PORT')
         
         self.registry = CollectorRegistry()
+
+        # maintain a list of nodes that are in status 'down'
+        self.nodes_down = []
     
     def exportToFile(self, fpath):
         """export metrics in the registry to a file"""
@@ -272,6 +275,7 @@ class ClusterStatistics:
             return cat
  
         # static node information
+        self.nodes_down = []
         for n in nodes:
             g_core_total.labels(host=n.host).set( n.ncores )
             g_mem_total.labels(host=n.host).set( n.mem * 1000000000 )
@@ -280,6 +284,8 @@ class ClusterStatistics:
 
             if n.stat in n_status.keys(): 
                 g_node_status.labels(host=n.host).set( n_status[n.stat] )
+                if n_status[n.stat] == n_status['down']:
+                    nodes_down.append(n.host)
             else:
                 g_node_status.labels(host=n.host).set( n_status['other'] )
 

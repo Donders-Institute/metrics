@@ -35,6 +35,12 @@ if __name__ == "__main__":
                       default = os.path.dirname(os.path.abspath(__file__)) + '/etc/config.ini',
                       type    = checkconfig,
                       help    = 'set the configuration parameters, see "config.ini"')
+
+    parg.add_argument('-s', '--sendmail',
+                      action  = 'store_true',
+                      dest    = 'sendmail',
+                      default = False,
+                      help    = 'enable sending notification emails at certain circumstances')
                       
     args = parg.parse_args()
 
@@ -52,6 +58,22 @@ if __name__ == "__main__":
     m = ClusterStatistics(config=args.fconfig, lv=lv)
     m.collectMetrics()
     m.pushMetrics()
+
+    # email notification
+    if args.sendmail:
+        labels = {}
+        mprev = m.getMetrics(name='hpc_stat_node_status', **labels)
+        # get list of nodes from previous data that are:
+        # - not in 'down' state
+        # - in the list of the currently down nodes
+        nlist = filter( lambda s:s[2] != -1 and s[1]['host'] in m.nodes_down, mprev )
+
+        logger.debug('notification for nodes are just down: %d nodes' % len(nlist))
+
+        if len(nlist) > 0:
+            subject = '[Torquemon] compute nodes DOWN!!'
+            msg = '\n'.join(nlist)
+            sendEmailNotification('admin@dccn-l034.dccn.nl', NOTIFICATION_EMAILS, subject, msg)
 
     m = MatlabLicenseAccounting(config=args.fconfig, lv=lv)
     m.collectMetrics()
