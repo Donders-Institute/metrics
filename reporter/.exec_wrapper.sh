@@ -27,6 +27,15 @@ function get_script_dir() {
 
 me=`basename $0`
 
+flock=/tmp/.${me}.lock
+
+if [ -f $flock ]; then
+    echo "previous process is still running ... exiting"
+    exit 0
+fi
+
+touch $flock
+
 dir=$( get_script_dir $0 )
 
 ## checking whether the cluster environment module is loaded
@@ -41,11 +50,9 @@ if [ $? != 0 ]; then
     module load cluster
 fi
 
-## loading module for python 2.7+
-module unload python > /dev/null 2>&1
-module load python/2.7.8
-
 myexec=$(echo $me | sed 's/.sh/.py/')
 
 ## run the executable passing command-line arguments
 ${dir}/${myexec} "$@"
+
+rm -f $flock
