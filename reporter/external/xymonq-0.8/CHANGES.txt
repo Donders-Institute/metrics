@@ -1,0 +1,117 @@
+CHANGES.txt for xymonq
+
+v0.8 (2018-01-26)
+-----------------------------------------------------------------------------
+
+FEATURES:
+
+- new option `-p` to prefix each line of output with the hostname (for
+  `clientlog`, `xymondlog` and `xymondboard` queries). The hostname is taken
+  from `hosts.cfg` and printed in the form `hostname: `.
+
+BUG FIXES:
+
+- correct spelling-error in usage and man-page: The `config` querytype was
+  mis-named `client`
+
+IMPROVEMENTS:
+
+- code-improvements: eliminate `eval` where possible; improved function naming
+
+
+v0.7 (2017-12-13)
+-----------------------------------------------------------------------------
+
+BUG FIXES:
+
+- config-loading was broken for the pre v0.6 behaviour of auto-searching the
+  config file.
+
+- the list-filter for `clientlog` was to restrictive, resulting in too few
+  sections to show up. It did not match `msgs:` and `logfile:` for instance.
+  Now clientlog-sections are matched against `\[[^]]+\]` resulting in all
+  sections to show up. (command: `xymonq -q clientlog -H myhost -l`)
+
+
+v0.6 (2017-12-10)
+-----------------------------------------------------------------------------
+
+FEATURES:
+
+- add possibility to specify config-file to to use with `-c conf-file`. The
+  default remains the auto-search w/ fallback to internal defaults.
+
+- allow more default-values to be set in config-file (TEST, FIELDS, SECTION)
+
+- add `config` query to retrieve `.cfg`-files from the xymon-server. The file
+  can be specified with `-f file.cfg`. If no file is specified it defaults to
+  `hosts.cfg`.
+
+
+v0.5 (2016-02-06)
+-----------------------------------------------------------------------------
+
+FEATURES:
+
+- add `hostinfo` query to fetch the configuration from `hosts.cfg` for one or
+  more hosts. While the host-selection is fully available there are currently
+  on output options, thus just the output from `xymon "hostlist [CRITERIA]"` is
+  printed as-is.
+
+- `ghostlist` may now be abbreviated as `ghost`
+
+BUG FIXES:
+
+- the sorting of the test-list (`xymonq -q xymondlog -l -S`) was incorrectly
+  sorting the `HOST=`-separator line. Removed the sorting completely for now.
+
+
+v0.4 (2015-10-15)
+-----------------------------------------------------------------------------
+
+FEATURES:
+
+- add `ghostlist` query to fetch the ghostlist. This also allows to
+  select based on the age of the report.
+
+- add `version` / `ping` query to get the version of the Xymon server
+  `xymonq` is communicating with.
+
+- read configuration from external config-file, see included sample
+  `xymonq.cfg` and the man-page for details.
+
+
+IMPROVEMENTS:
+
+- only build hostlist if needed for further operations
+
+- help and man page: more examples, better structure, added shore description
+  for querytypes 
+
+
+v0.3 (2015-10-06)
+-----------------------------------------------------------------------------
+Except for the volume-mode corner case (see below) this version can replace
+v0.2.
+
+IMPROVEMENTS:
+
+- introduce a `volume-mode`: used in `xymondboard`-mode without `-S`-option;
+  this is not finished yet
+
+
+BUG FIXES:
+
+- hostname-search in `xymondboard`-mode: correctly anchor the regex to prevent
+  returning data for too many hosts
+
+
+
+v0.2 (2015-06-23)
+-----------------------------------------------------------------------------
+First public release
+
+
+v0.1 (2015-05-12)
+-----------------------------------------------------------------------------
+not released to public

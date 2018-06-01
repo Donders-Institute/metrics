@@ -1,0 +1,581 @@
+#!/bin/bash
+##
+## (c) 2015-2018 Thomas Eckert, http://www.it-eckert.com/
+##
+## xymonq is a generic Xymon data query tool; a frontend for the `xymon` 
+## messages like
+##	clientlog | xymondlog | xymondboard | ghostlist | ping | ...
+## messages/commands of xymon(1).
+
+## TODO: maintained in `tasks.taskpaper`
+
+
+######################################################################
+## config:
+
+MY_NAME="${0##*/}"
+MY_VERSION="0.8"
+
+## might be set from cmdline `-c`:
+CONF_FILE=""
+
+XYMON_CMD=""
+XYMON_SRV=""
+
+## optional post-processing filter (shell-command / pipeline; -c option):
+POST_COMMAND=""
+
+## vars set dynamically below based on cmdline or config-file:
+QUERYTYPE=""
+HOSTLIST=""
+SECTION=""
+TEST=""
+COLOR=""
+
+## set by `-L`-option:
+PRINT_HOSTS_ONLY=0
+## set by `-l`-option:
+LIST_FLAG=0
+## set by `-p`-option:
+PREFIX_HOSTNAME=0
+
+## build dynamically: (host, page, test, color CRITERIA)
+FILTER_HOST=""
+FILTER=""
+## fields output by xymondboard (hard-wired to "hostname" for _build_hostlist()):
+FIELDS=""
+## print HOST=hostname before sections (controlled by -S option):
+PRINT_HOST=0
+## enable debug/verbose output: 0=off
+DEBUG=0
+VERBOSE=0
+
+
+######################################################################
+## functions:
+
+_usage() {
+	cat <<EOT
+$MY_NAME - A frontend to query the Xymon network- and systems-monitor.
+
+Usage: ${0##*/} [ -c conf-file] -q QUERYTYPE [-P PAGEPATH] [-H HOSTNAME] [-T TEST] [-C COLOR[,COLOR,...]] [-X CRITS] [-f FIELD[,FIELD,...]] [-s SECTION[,SECTION,...]] | -l ] [-S|-p] [-h | -V] [-d]
+   or: $MY_NAME -q clientlog   [-P PAGEPATH] [-H HOSTNAME] [-T TEST] [-C COLOR[,COLOR,...]] [-X CRITS] [-s SECTION[,SECTION,...]] | -l ]
+   or: $MY_NAME -q xymondboard [-P PAGEPATH] [-H HOSTNAME] [-T TEST] [-C COLOR[,COLOR,...]] [-X CRITS] [-f FIELD,[FIELD,...]]
+   or: $MY_NAME -q hostinfo    [-P PAGEPATH] [-H HOSTNAME] [-T TEST] [-C COLOR[,COLOR,...]] [-X CRITS]
+   or: $MY_NAME -q xymondlog   [-P PAGEPATH] [-H HOSTNAME] {-T TEST | -l} [-C COLOR[,COLOR,...]] [-X CRITS]
+   or: $MY_NAME -q ghostlist [-a [-]AGE] [-l]
+   or: $MY_NAME -q config [-f file]
+   or: $MY_NAME -q {ping|version}
+
+OPTIONS TO SELECT DISPLAYED DATA FOR THE HOSTS:
+  -q QUERYTYPE  Query to perform to Xymon [clientlog | xymondboard | hostinfo | xymondlog | ghost[list] | config | ping]
+
+OPTIONS TO SELECT HOSTS:
+  -P PAGEPATH   A PAGEPATH specification from hosts.cfg(*).
+  -H HOSTNAME   A hostname from hosts.cfg(*).
+                To read the hosts from stdin use "-" (all other filters inactive).
+  -T TEST       The name of a TEST, defaults to "info"(*).
+(*) interpreted as a REGEX
+
+  -C COLOR      only tests with COLOR, may be coma-separated list like "clear,green",
+                default: empty=all colors
+  -X CRITS      eXtra CRITERIA, like "ip=", "net=" or "tag=", CRITS are passed as-is
+                to xymondboard
+An empty (or missing) option matches every item of that criterium.
+  -L            print evaluated hostlist to stdout and exit
+  -S            print "HOST=hostname" separator-lines above data (deprecated)
+  -p            prefix each line of output w/ "hostname: ", valid for queries: clientlog, xymondboard, xymondlog
+
+Options for clientlog:
+  -f FIELD      fields to print, defaults to "hostname"
+  -s SECTION    one or more section-names, coma separated
+                If empty the whole clientlog is printed
+  -l            list available sections only (as they occur)
+
+Options for xymondboard:
+  -f FIELD      fields to print, defaults to empty, thus using xymon-defaults
+
+Options for xymondlog:
+  -l            just list available tests for selected host(s)
+
+Options for ghostlist:
+  -a [-]AGE     print only host with report AGE; AGE is a GNU-date "-s"-compatible string)
+                The "-" prefix inverts the selection.
+  -l            only print the hostnames instead of the default full "ghostline"
+
+Options for config:
+  -f file       The file to retrieve, e.g. "hosts.cfg", "analysis.cfg". Only files ending
+                with ".cfg" can be fetched. Defaults to "hosts.cfg".
+
+Global options:
+  -c conf-file  use specified config-file, this prevents searching default locations; default-values apply if not specified.
+                Has to be 1st cmdline option in order to allow selectively override values from cmdline.
+  -v            verbose output, print the "xymon"-commandlines
+  -V            print version info
+  -d            enable debug output
+  -h            this help message
+EOT
+} ## of _usage()
+
+_cmd_parse() {
+	local opt
+
+	## ensure we have our default-config loaded, may be overridden
+	## by cmdline and/or `-c conf-file`:
+	_load_config
+
+	while getopts c:q:P:H:LT:C:X:f:s:la:SpvVdh opt "$@"
+	do
+		case "$opt" in
+			c)	CONF_FILE="$OPTARG"
+				## load the config-file:
+				_load_config
+				;;
+			q)	QUERYTYPE="$OPTARG"
+				;;
+			P)	FILTER="$FILTER page=$OPTARG"
+				;;
+			H)	FILTER_HOST="host=$OPTARG"
+				;;
+			T)	TEST="$OPTARG"
+				;;
+			C)	FILTER="$FILTER color=$OPTARG"
+				;;
+			X)	FILTER="$FILTER $OPTARG"
+				;;
+			L)	PRINT_HOSTS_ONLY=1
+				;;
+			f)	FIELDS="$OPTARG"
+				;;
+			s)	SECTION="$OPTARG"
+				;;
+			l)
+				case "$QUERYTYPE" in
+					clientlog)	POST_COMMAND="egrep '^(HOST|\[[^]]+\])'"
+						;;
+					xymondboard)	POST_COMMAND="cut -d'|' -f 2"
+						;;
+					xymondlog)	LIST_FLAG=1
+						;;
+					ghost*)
+							## in case `-a AGE` is used we need to preserve it:
+							## TODO: check if LIST_FLAG=1 would make this more readable!
+							if [[ -z "$POST_COMMAND" ]]; then
+								POST_COMMAND="cut -d'|' -f 1"
+							else
+								POST_COMMAND="$POST_COMMAND | cut -d'|' -f 1"
+							fi
+						;;
+					*)		_log "\"-l\"-option not implemented for this querytype (yet)"
+						;;
+				esac
+				;;
+			a) 	## the only possible post-command comes from the `-l`-option,
+				## we need to script hostnames after this:
+				if [[ -z "$POST_COMMAND" ]]; then
+					POST_COMMAND="_ghostlist_age_filter \"$OPTARG\""
+				else
+					POST_COMMAND="_ghostlist_age_filter \"$OPTARG\" | $POST_COMMAND"
+				fi
+
+
+				;;
+			S)	PRINT_HOST=1
+				;;
+			p)	PREFIX_HOSTNAME=1
+				;;
+			v)	VERBOSE=1
+				;;
+			V)	echo "$MY_NAME $MY_VERSION"
+				echo
+				echo "Copyright (c) 2015-2018 Thomas Eckert, http://www.it-eckert.com/"
+				echo
+				echo "Written by Thomas Eckert"
+				exit
+				;;
+			d)	DEBUG=1
+				;;
+			h|*)
+				_usage
+				exit
+				;;
+		esac
+	done
+
+	## if test=info (the default and every host has this) we get rid of
+	## duplicate hostname reportings:
+	#FILTER="$FILTER test=$TEST"
+	_debug "QUERYTYPE=$QUERYTYPE"
+	_debug "POST_COMMAND=$POST_COMMAND"
+	_debug "resulting CRITERIUM/FILTER: $FILTER $FILTER_HOST test=$TEST"
+} ## of _cmd_parse()
+
+_load_config() {
+	_debug "${FUNCNAME[0]}() starting"
+	## check for external config-files:
+	if [[ "$CONF_FILE" != "" ]]; then
+		## config-file was specified by `-c FILE`:
+		if [[ -r "$CONF_FILE" ]]; then
+			_log "Using specified config-file \"$CONF_FILE\"."
+			. $CONF_FILE
+		else
+			echo "ERROR: cannot read \"$CONF_FILE\", exiting."
+			exit 1
+		fi
+	else
+		_log "Searching for default config-file..."
+		CONF_FILE="xymonq.cfg"
+		if [[ -f ./.$CONF_FILE ]]; then
+			_log "config-file ./.$CONF_FILE found"
+			. ./.$CONF_FILE
+		elif [[ -f ~/.$CONF_FILE ]]; then
+			_log "config-file ~/.$CONF_FILE found"
+			. ~/.$CONF_FILE
+		elif [[ -f /etc/xymon/$CONF_FILE ]]; then
+			_log "config-file /etc/xymon/$CONF_FILE found"
+			. /etc/xymon/$CONF_FILE
+		else
+			 _log "No config-file found, using defaults."
+		fi
+	fi
+
+	## default-settings for xymon:
+	XYMON_CMD="${XYMON_CMD:-xymon}"
+	XYMON_SRV="${XYMON_SRV:-127.0.0.1:1984}"
+	TEST="${TEST:-info}"
+} ## of _load_config()
+
+_log() {
+	if [ $VERBOSE -gt 0 ]; then
+		echo "log: $@"
+	fi
+}
+
+_debug() {
+	if [ $DEBUG -gt 0 ]; then
+		echo "DEBUG: $@" >&2
+	fi
+}
+
+
+## check if there is something to read from stdin (currently only `-H -`), read
+## and handle the data and return 0 (success); otherwise return 1 (failure, i.e.
+## nothing to read from stdin
+_read_stdin() {
+	_debug "${FUNCNAME[0]}() starting"
+	if [ "$FILTER_HOST" = "host=-" ]; then
+		if [ "$QUERYTYPE" = "xymondboard" ]; then
+			## for volume-mode we craft an discrete hostlist w/o andy regex
+			## usable by `xymondboard`:
+			HOSTLIST="$(cat | sed -e ':a;/$/{N;s/\n/|/;ba}' | sed -e 's/\./\\./g')"
+			FILTER_HOST="host=$HOSTLIST"
+		else
+			_debug "reading hosts from stdin"
+			HOSTLIST="$(cat)"
+		fi
+		## in any case we had input from stdin:
+		return 0
+	else
+		_debug "No hosts to read from stdin."
+		return 1
+	fi
+} ## of _read_stdin()
+
+
+_build_hostlist() {
+	## build the hostlist for printing using info-test (this is available
+	## always):
+	if ! _read_stdin; then
+		_debug "reading hosts from xymon with: $XYMON_CMD $XYMON_SRV \"xymondboard $FILTER_HOST $FILTER test=$TEST fields=hostname\""
+		_log "(build hostlist) $XYMON_CMD $XYMON_SRV \"xymondboard $FILTER_HOST $FILTER test=$TEST fields=hostname\""
+		HOSTLIST="$($XYMON_CMD $XYMON_SRV "xymondboard $FILTER_HOST $FILTER test=$TEST fields=hostname")"
+	fi
+
+	if [ "$PRINT_HOSTS_ONLY" = "1" ]; then
+		_debug "printing hostlist only ('-L' option specified):"
+		echo "$HOSTLIST"
+		exit
+	fi
+	_debug "evaluated hostlist : $(echo $HOSTLIST)"
+	_debug "requested section  : $SECTION"
+	_debug "requested test     : $TEST"
+} ## of _build_hostlist()
+
+
+## params: [ host ], [ section ]
+_print_clientlog() {
+	local host="$1"
+	shift
+
+	_debug "${FUNCNAME[0]}() starting"
+	if [ "$1" != "" ]; then
+		local section="section=$1"
+	fi
+
+	_debug "${FUNCNAME[0]}() starting"
+	_xymon_cmd "clientlog $host $section"
+} ## of _print_clientlog()
+
+
+_print_xymondlog() {
+	local host="$1"
+	local test="$2"
+
+	_debug "${FUNCNAME[0]}() starting"
+	if [ $LIST_FLAG -eq 0 ]; then
+		_xymon_cmd "xymondlog $host.$test"
+	else
+		#_xymon_cmd "xymondboard host=$host fields=testname"
+		## need to modify global FIELDS here:
+		FIELDS="fields=testname"
+		_print_xymondboard "$host"
+	fi
+}
+
+_print_xymondboard() {
+	local host="$1"
+	local section="$2"
+
+	_debug "${FUNCNAME[0]}() starting"
+	_xymon_cmd "xymondboard host=^$host\$ test=$TEST $FIELDS"
+}
+
+_print_hostinfo() {
+	local host="$1"
+	local section="$2"
+
+	_debug "${FUNCNAME[0]}() starting"
+	_xymon_cmd "hostinfo host=^$host\$ test=$TEST $FIELDS"
+}
+
+## large-volume-mode: get (almost) _all_ information our of xymon at the expense
+## of network traffic and filter it locally in _filter_volume()
+## Idea:
+##	- only make one connection to `xymond` with a basic filter (page, host, test, color, X-crits)
+##	- return large amount of data: 1st line (line1) and full message (msg)
+##	- post-process the returned data locally: later, we may even replace `xymondlog`-queries by this
+## suggested by J.C. Cleaver
+_print_xymondboard_volume() {
+	_debug "${FUNCNAME[0]}() starting"
+	## To get almost all data we get the fields `line1,msg` here. Maybe we make
+	## this a cmdline option later:
+	_xymon_cmd "xymondboard $FILTER_HOST $FILTER test=$TEST $FIELDS"
+} ## of _print_xymondboard_volume()
+
+#_parse_xymondboard_volume() {
+#	#_debug "${FUNCNAME[0]}() starting"
+#	echo "$*"
+#	return
+#} ## of _parse_xymondboard_volume()
+_parse_xymondboard_volume() {
+	_debug "${FUNCNAME[0]}() starting"
+	_debug "FIELDS=$FIELDS"
+	"$(dirname "$0")"/unescape-xymonq.awk -vFIELDS="${FIELDS#fields=}"
+} ## of _parse_xymondboard_volume()
+
+## retrieve and print a config-file:
+_print_config() {
+	local file=""
+
+	_debug "${FUNCNAME[0]}() starting"
+
+	if [ -n "${FIELDS}" ]; then
+		file="${FIELDS#fields=}"
+	else
+		file="hosts.cfg"
+	fi
+	_log "retrieving file=$file"
+
+	_xymon_cmd "config ${file}"
+} ## of _print_config()
+
+## print the full ghostlist
+_print_ghostlist() {
+	_debug "${FUNCNAME[0]}() starting"
+	_xymon_cmd "ghostlist"
+}
+
+_ghostlist_age_filter() {
+	local age_opt="$*"
+	local inverted=0	## defaults to false
+	local age_ts
+	local ts
+
+	_debug "${FUNCNAME[0]}() starting"
+
+	## check if inverted search is requested:
+	if [ "${age_opt:0:1}" = "-" ]; then
+		inverted=1
+		## strip off the "-" marker:
+		age_opt="${age_opt#-}"
+	fi
+	_debug "incoming age_opt=\"$age_opt\" ; inverted=$inverted"
+
+	## convert age_ts to timestamp:
+	age_ts="$(date +'%s' -d "$age_opt")"
+	_debug "resulting age_ts=$age_ts"
+
+	## xymon-output is separated by "|":
+	OIFS=$IFS
+	IFS="|$IFS"
+	while read hostname ip ts rest
+	do
+		diff=$((ts-age_ts))
+
+		_debug "split data: hostname=$hostname ip=$ip ts=$ts rest=$rest age_ts=$age_ts diff=$diff"
+		if [ $diff -ge 0 ]; then
+			if [ $inverted -eq 0 ]; then
+				_debug "if-match: $hostname|$ip|$ts"
+				echo "$hostname|$ip|$ts"
+			else
+				_debug "if-NO-match: $hostname|$ip|$ts"
+			fi
+		else
+			if [ $inverted -eq 0 ]; then
+				_debug "else-NO match: $hostname|$ip|$ts"
+			else
+				_debug "else-INV match: $hostname|$ip|$ts"
+				echo "$hostname|$ip|$ts"
+			fi
+		fi
+	done
+
+	## alternative version w/ awk-forking:
+	#awk -F"|" -vage_ts=$age_ts '{ ts=$NF; if ( ts > age_ts ) print; }'
+
+	## just in case ;)
+	IFS=$OIFS
+} ## of _ghostlist_age_filter()
+
+## xymon `ping` is in fact a `version`-query:
+_print_ping() {
+	_debug "${FUNCNAME[0]}() starting"
+
+	## we only care for the version-number:
+	_xymon_cmd "ping" | cut -d" " -f 2
+}
+
+_prefix_hostname() {
+	local host="$1"
+
+	_debug "${FUNCNAME[0]}() starting"
+	[ "$PREFIX_HOSTNAME" = "0" ] && cat - || sed -e "s/^/$host: /"
+}
+
+_xymon_cmd() {
+	local xymon_msg="$@"
+
+	## print our "HOST=<hostname>"-tag:
+	if [ $PRINT_HOST -ne 0 ] && [ "$QUERYTYPE" != "ghostlist" ]; then
+		echo "HOST=$host"
+	fi
+
+	if [ "$POST_COMMAND" = "" ]; then
+		_debug "command: $XYMON_CMD $XYMON_SRV \"$xymon_msg\""
+		_log "$XYMON_CMD $XYMON_SRV \"$xymon_msg\""
+		$XYMON_CMD $XYMON_SRV "$xymon_msg"
+	else
+		_debug "command: $XYMON_CMD $XYMON_SRV \"$xymon_msg\" | eval $POST_COMMAND"
+		_log "$XYMON_CMD $XYMON_SRV \"$xymon_msg\" | eval $POST_COMMAND"
+		$XYMON_CMD $XYMON_SRV "$xymon_msg" | eval "$POST_COMMAND"
+	fi
+} ## of _xymon_cmd()
+
+_main() {
+	local my_host
+
+	## xymondboard output wanted (i.e. _no_ "clientlog"):
+	if [ "$FIELDS" != "" ]; then
+		FIELDS="fields=$FIELDS"
+	fi
+
+	## volume-mode take2:
+	## Implicit aproach: _if_ `-q xymondboard` _and_ no `-S` then there is no
+	## point in building an intermediate HOSTLIST w/ _build_hostlist(), looping
+	## the hosts and connecting ${#HOSTLIST} to `xymond`.
+	## Instead, we just return the requested FIELDS.
+	if [ "$QUERYTYPE" = "xymondboard" ]; then
+		if [ "$TEST" != "info" ]; then
+			TEST="$TEST"
+		fi
+		if [ $PRINT_HOST -eq 0 ] && [ $PREFIX_HOSTNAME -eq 0 ]; then
+			## go volume mode ...
+			_debug "entering large-volume-mode"
+			_print_xymondboard_volume | _parse_xymondboard_volume
+			## TODO:
+			##	- filter output of the above (`|`-delimitted and various escaped chars (\\n, \\|, ...)
+			##	- maybe we can even make `-S` work by filtering the hostname?
+			##	  This would make "volume-mode" the default for
+			##	  `-q xymondboard` turning it into a general optimization for
+			##	  this query!
+			##	  In this case `hostname` has to be present in $FIELDS!
+
+			## we are done here, so exit:
+			exit 0
+		fi
+	fi
+
+	## ghostlist, config, ping are "global" xymon querys, no host loop required
+	if [[ "$QUERYTYPE" =~ ghost.* ]]; then
+		_print_ghostlist
+		return
+	fi
+	if [ "$QUERYTYPE" = "config" ]; then
+		_print_config
+		return
+	fi
+	if [ "$QUERYTYPE" = "ping" ] || [ "$QUERYTYPE" = "version" ]; then
+		_print_ping
+		return
+	fi
+
+	## fill the global $HOSTLIST:
+	_build_hostlist
+
+	for my_host in $HOSTLIST
+	do
+		case "$QUERYTYPE" in
+			clientlog)
+				_debug "_print_clientlog \"$my_host\" \"$SECTION\""
+				_print_clientlog "$my_host" "$SECTION" | _prefix_hostname "$my_host"
+				;;
+			xymondlog)
+				if [ "$TEST" = "info" ] && [ "$LIST_FLAG" = "0" ]; then
+					## if no TEST was specified _and_ no test-listing is requested (no `-l`)
+					echo "Missing option: Need -T TEST! The default test \"info\" does not contain any data."
+					_usage
+					exit 1
+				fi
+				_debug "_print_xymondlog \"$my_host\" \"$TEST\""
+				_print_xymondlog "$my_host" "$TEST" | _prefix_hostname "$my_host"
+				;;
+			xymondboard)
+				#_xymon_cmd "xymondboard host=$my_host $FILTER $TEST $FIELDS"
+				_print_xymondboard "$my_host" | _prefix_hostname "$my_host"
+				;;
+			hostinfo)
+				_print_hostinfo "$my_host"
+				;;
+			*)
+				echo "ERROR: unknown query-type."
+				_usage
+				exit 10
+				;;
+		esac
+	done
+} ## of _main()
+
+
+######################################################################
+## MAIN
+######################################################################
+
+_cmd_parse "$@"
+
+
+_main
+
+exit
+
+
+## vim:sw=4:ts=4
