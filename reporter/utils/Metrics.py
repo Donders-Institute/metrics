@@ -344,6 +344,34 @@ class ClusterStatistics:
                 g_mem_usage.labels(queue=_qcat(j.queue), host=n).inc(m_chunk)
                 
         return
+
+class ClusterEnergyConsumption(ClusterStatistics):
+    """metrics collector for cluster energy consumption"""
+    def __init__(self, config, lv=logging.ERROR):
+        
+        ClusterStatistics.__init__(self,config,lv)
+        
+        ## load config file and global settings
+        c = getConfig(config)
+        self.BIN_XYMONQ = c.get('MetricsPusher', 'BIN_XYMONQ')
+        self.CFG_XYMONQ = c.get('MetricsPusher', 'CFG_XYMONQ')
+        self.XYMON_PDU_LIST = c.get('MetricsPusher', 'XYMON_PDU_LIST').split(',')
+
+    def collectMetrics(self):
+
+        s = Shell(debug=False)
+
+        g_energy_usage  = Gauge('hpc_energy_usage' , 'energy consumption watts per hour', ['pdu'], registry=self.registry)
+
+        for pdu in self.XYMON_PDU_LIST:
+            cmd = "%s -c %s -q xymondlog -H %s -T energy | grep 'DeviceStatusEnergy' | awk '{print $NF}'" % (self.BIN_XYMONQ, self.CFG_XYMONQ, pdu)
+            rc, output, m = s.cmd1(cmd, allowed_exit=[0,255], timeout=300)
+            if rc == 0:
+                g_energy_usage.labels(pdu=pdu).set(float(output))
+            else:
+                logger.warn('Cannot retrieve energy consumption for %s', pdu)
+
+        return
         
 def testClusterMetrics(config):
     """Test function for MetricsRegistry"""
@@ -352,6 +380,10 @@ def testClusterMetrics(config):
     m.collectMetrics()
     # write out metrics to file
     m.exportToFile('statistics.prom')
+
+    m = ClusterEnergyConsumption(config, lv=logging.DEBUG)
+    m.collectMetrics()
+    m.exportToFile('energy.prom')
     
     m = ClusterAccounting(config, lv=logging.DEBUG)
     m.collectMetrics()
