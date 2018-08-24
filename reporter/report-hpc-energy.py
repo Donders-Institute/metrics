@@ -53,5 +53,4 @@ if __name__ == "__main__":
 
     m = ClusterEnergyConsumption(config=args.fconfig, lv=lv)
     m.collectMetrics()
-    m.exportToFile('energy.prom')
-    #m.pushMetrics()
+    m.pushMetrics(job='hpc_energy_consumption')

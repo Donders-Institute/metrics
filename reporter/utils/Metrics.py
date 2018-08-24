@@ -361,10 +361,10 @@ class ClusterEnergyConsumption(ClusterStatistics):
 
         s = Shell(debug=False)
 
-        g_energy_usage  = Gauge('hpc_energy_usage' , 'energy consumption watts per hour', ['pdu'], registry=self.registry)
+        g_energy_usage  = Gauge('hpc_energy_usage' , 'energy consumption watts', ['pdu'], registry=self.registry)
 
         for pdu in self.XYMON_PDU_LIST:
-            cmd = "%s -c %s -q xymondlog -H %s -T energy | grep 'DeviceStatusEnergy' | awk '{print $NF}'" % (self.BIN_XYMONQ, self.CFG_XYMONQ, pdu)
+            cmd = "%s -c %s -q xymondlog -H %s -T watts | grep 'DevicePowerWatts' | awk '{print $NF}'" % (self.BIN_XYMONQ, self.CFG_XYMONQ, pdu)
             rc, output, m = s.cmd1(cmd, allowed_exit=[0,255], timeout=300)
             if rc == 0:
                 g_energy_usage.labels(pdu=pdu).set(float(output))
