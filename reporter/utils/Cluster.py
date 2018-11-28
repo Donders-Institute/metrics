@@ -346,7 +346,7 @@ def get_mentat_node_properties(debug=False):
 
     return nodes
 
-def get_cluster_node_properties(debug=False):
+def get_cluster_node_properties(node_domain_suffix='dccn.nl', debug=False):
     '''parse pbsnodes -a to get node properties'''
 
     logger = getMyLogger(os.path.basename(__file__))
@@ -467,14 +467,16 @@ def get_cluster_node_properties(debug=False):
 
             m = re_jobs.match(l)
             if m:
-                #jobs = 0-3/18316136[3].dccn-l029.dccn.nl,4-7/18316136[4].dccn-l029.dccn.nl,...
-                for job_str in m.group(1).split(','):
+                #jobs = 0-3/18316136[3].dccn-l029.dccn.nl,1,4-7/18316136[4].dccn-l029.dccn.nl,...
+                for job_str in m.group(1).replace(node_domain_suffix+',', node_domain_suffix+':').split(':'):
                     job_data = job_str.split('/')
-                    if job_data[1] not in n.jobs.keys():
-                        n.jobs[job_data[1]] = []
-                    id_beg = int(job_data[0].split('-')[0])
-                    id_end = int(job_data[0].split('-')[-1]) + 1
-                    n.jobs[job_data[1]] += range(id_beg, id_end)
+                    job_id   = job_data[1].split('.')[0]
+                    if job_id not in n.jobs.keys():
+                        n.jobs[job_id] = []
+                    for id_data in job_data[0].split(','):
+                        id_beg = int(id_data.split('-')[0])
+                        id_end = int(id_data.split('-')[-1]) + 1
+                        n.jobs[job_id] += range(id_beg, id_end)
                 continue
                 
             m = re_ngp.match(l)
@@ -569,7 +571,7 @@ def get_qstat_jobs(s_cmd, node_domain_suffix='dccn.nl', debug=False):
     s = Shell(debug=False)
     rc, output, m = s.cmd1(s_cmd, allowed_exit=[0,255], timeout=300)
 
-    re_jinfo  = re.compile ( '^(\S+)\s+'                  +    # job id
+    re_jinfo  = re.compile ( '^([0-9\[\]]+)\.\S+\s+'      +    # job id
                              '(\w+)\s+'                   +    # user id
                              '(\w+)\s+'                   +    # queue name
                              '(\S+)\s+'                   +    # job name
@@ -619,6 +621,8 @@ def get_qstat_jobs(s_cmd, node_domain_suffix='dccn.nl', debug=False):
                     jlist[j.jstat] = []
 
                 jlist[j.jstat].append(j)
+            else:
+                logger.warning('qstat line not parsed: %s' % l)
 
     return jlist
 

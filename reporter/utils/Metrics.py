@@ -340,8 +340,12 @@ class ClusterStatistics:
             # update core and memory usage
             m_chunk = 1.0 * j.rmem * 1000000000 / len(j.node)
             for n in j.node:
-                g_core_usage.labels(queue=_qcat(j.queue), host=n).inc(1)
-                g_mem_usage.labels(queue=_qcat(j.queue), host=n).inc(m_chunk)
+                # find node in the pbsnode list
+                ninfo = filter(lambda x:x.host == n, nodes)
+                if len(ninfo) == 1:
+                    j_core_ids = ninfo[0].jobs[j.jid]
+                    g_core_usage.labels(queue=_qcat(j.queue), host=n).inc(len(j_core_ids))
+                    g_mem_usage.labels(queue=_qcat(j.queue), host=n).inc(m_chunk)
                 
         return
 
