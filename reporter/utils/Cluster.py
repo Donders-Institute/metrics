@@ -593,7 +593,7 @@ def get_qstat_jobs(s_cmd, node_domain_suffix='dccn.nl', debug=False):
             host = node_hostname.split('/')[0]
             if host != '--':
                 host += '.' + node_domain_suffix
-            return host 
+            return host
 
         for l in output.split('\n'):
             l = l.strip()
@@ -601,7 +601,7 @@ def get_qstat_jobs(s_cmd, node_domain_suffix='dccn.nl', debug=False):
 
             if m:
                 nodelist = ['']
-                if m.group(12) != '==':
+                if m.group(12) != '--':
                     nodelist = map( lambda x:__apply_domain_suffix__(x), m.group(12).split('+'))
 
                 j = Job( jid   = m.group(1)               ,
