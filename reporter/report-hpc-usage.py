@@ -77,7 +77,7 @@ if __name__ == "__main__":
         if len(nlist) > 0:
             subject = '[Torquemon] compute nodes DOWN!!'
             msg = '\n'.join(map(lambda x:x[1]['host'], nlist))
-            sendEmailNotification('admin@dccn-l018.dccn.nl', c.get('TorqueTracker','NOTIFICATION_EMAILS').split(','), subject, msg)
+            sendEmailNotification('admin@dccn-l034.dccn.nl', c.get('TorqueTracker','NOTIFICATION_EMAILS').split(','), subject, msg)
 
     # push metrics 
     m.pushMetrics()
