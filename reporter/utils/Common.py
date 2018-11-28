@@ -120,7 +120,7 @@ def getMyLogger(name=None):
     if name is None:
         name = inspect.stack()[1][3]
 
-    logging.basicConfig(format='[%(levelname)s:%(name)s] %(message)s', level=logging.ERROR)
+    logging.basicConfig(format='[%(levelname)s:%(name)s] %(message)s', level=logging.WARNING)
     return logging.getLogger(name)
 
 def getConfig(config_file='config.ini'):
