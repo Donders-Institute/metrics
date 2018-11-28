@@ -471,7 +471,7 @@ def get_cluster_node_properties(debug=False):
                 for job_str in m.group(1).split(','):
                     job_data = job_str.split('/')
                     if job_data[1] not in n.jobs.keys():
-                        m.jobs[job_data[1]] = []
+                        n.jobs[job_data[1]] = []
                     id_beg = int(job_data[0].split('-')[0])
                     id_end = int(job_data[0].split('-')[-1]) + 1
                     n.jobs[job_data[1]] += range(id_beg, id_end)
