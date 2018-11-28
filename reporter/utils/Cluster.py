@@ -380,6 +380,7 @@ def get_cluster_node_properties(debug=False):
         logger.error('command %s return non-exit code: %d' % (cmd, rc))
     else:
         re_host = re.compile('^(\S+)$')
+        re_jobs = re.compile('^\s+jobs\s+\=\s+(\S+)$')
         re_stat = re.compile('^\s+state\s+\=\s+(\S+)$')
         re_np   = re.compile('^\s+np\s+\=\s+(\d+)$')
         re_ngp  = re.compile('^\s+gpus\s+\=\s+(\d+)$')
@@ -415,7 +416,8 @@ def get_cluster_node_properties(debug=False):
                          matlab        = False,       # node allowing matlab batch jobs 
                          vgl           = False,       # node allowing VirtualGL jobs 
                          batch         = False,       # node allowing batch jobs 
-                         props         = [])          # other queue properties
+                         props         = [],          # other queue properties
+                         jobs          = {})          # jobs and allocated core ids
                 continue
  
             m = re_stat.match(l)
@@ -461,6 +463,18 @@ def get_cluster_node_properties(debug=False):
                 n.vgl         = 'vgl'         in n.props
                 n.batch       = 'batch'       in n.props
 
+                continue
+
+            m = re_jobs.match(l)
+            if m:
+                #jobs = 0-3/18316136[3].dccn-l029.dccn.nl,4-7/18316136[4].dccn-l029.dccn.nl,...
+                for job_str in m.group(1).split(','):
+                    job_data = job_str.split('/')
+                    if job_data[1] not in n.jobs.keys():
+                        m.jobs[job_data[1]] = []
+                    id_beg = int(job_data[0].split('-')[0])
+                    id_end = int(job_data[0].split('-')[-1]) + 1
+                    n.jobs[job_data[1]] += range(id_beg, id_end)
                 continue
                 
             m = re_ngp.match(l)
@@ -607,6 +621,33 @@ def get_qstat_jobs(s_cmd, node_domain_suffix='dccn.nl', debug=False):
                 jlist[j.jstat].append(j)
 
     return jlist
+
+def get_job_nprocs(s_cmd, job_id, node_domain_suffix='dccn.nl', debug=False):
+    """get processor allocation of given job"""
+
+    hprocs = {}
+
+    re_hostlist = re.compile('^req_information\.hostlist\.[0-9]+\s+=\s+(\S+):ppn=([0-9]+)$')
+
+    s = Shell(debug=False)
+
+    cmd = "qstat -f " + job_id
+    rc, output, m = s.cmd1(cmd, allowed_exit=[0,255], timeout=300)
+    for l in output.split('\n'):
+        l.strip()
+        m = re_hostlist.match(l)
+        if not m:
+            continue
+
+        host  = m.group(1)
+        nproc = int(m.group(2))
+
+        if host not in hprocs.keys():
+            hprocs[host] = 0
+        
+        hprocs[host] += nproc
+
+    return hprocs
 
 def get_matlab_license_usage(s_cmd, node_domain_suffix='dccn.nl', debug=False):
     """get matlab license usage of DCCN"""
