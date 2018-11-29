@@ -600,7 +600,7 @@ def get_qstat_jobs(s_cmd, node_domain_suffix='dccn.nl', debug=False):
             m = re_jinfo.match(l)
 
             if m:
-                nodelist = ['']
+                nodelist = []
                 if m.group(12) != '--':
                     nodelist = map( lambda x:__apply_domain_suffix__(x), m.group(12).split('+'))
 
