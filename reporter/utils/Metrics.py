@@ -334,18 +334,23 @@ class ClusterStatistics:
         ## get jobs in running state
         r_jobs = filter(lambda j:j.jstat in ['E','R'], _jobs)
         for j in r_jobs:
-            # job is counted to the leading host (i.e. the first node on the job property)
-            g_job_count.labels(queue=_qcat(j.queue), status='running', host=j.node[0]).inc(1)
-            
-            # update core and memory usage
-            m_chunk = 1.0 * j.rmem * 1000000000 / len(j.node)
-            for n in j.node:
-                # find node in the pbsnode list
-                ninfo = filter(lambda x:x.host == n, nodes)
-                if len(ninfo) == 1:
-                    j_core_ids = ninfo[0].jobs[j.jid]
-                    g_core_usage.labels(queue=_qcat(j.queue), host=n).inc(len(j_core_ids))
-                    g_mem_usage.labels(queue=_qcat(j.queue), host=n).inc(m_chunk)
+            if j.node:
+                # job is counted to the leading host (i.e. the first node on the job property)
+                g_job_count.labels(queue=_qcat(j.queue), status='running', host=j.node[0]).inc(1)
+             
+                # update core and memory usage
+                m_chunk = 1.0 * j.rmem * 1000000000 / len(j.node)
+                for n in j.node:
+                    # find node in the pbsnode list
+                    ninfo = filter(lambda x:x.host == n, nodes)
+                    if len(ninfo) == 1:
+                        j_core_ids = ninfo[0].jobs[j.jid]
+                        g_core_usage.labels(queue=_qcat(j.queue), host=n).inc(len(j_core_ids))
+                        g_mem_usage.labels(queue=_qcat(j.queue), host=n).inc(m_chunk)
+                    else:
+                        logger.warning('job not found on node: %s, %s' % (j.jid, n))
+            else:
+                logger.warning('job running/exiting on unknown node: %s [%s]' % (j.jid, j.jstat))
                 
         return
 
