@@ -137,7 +137,7 @@ def getConfig(config_file='config.ini'):
         'TORQUE_BATCH_QUEUES': 'short,medium,long',
         'BIN_QSTAT_ALL'      : 'hpcutil cluster qstat',
         'BIN_FSHARE_ALL'     : '',
-        'BIN_CLUSTER_MATLAB' : 'hpcutil cluster matliblic',
+        'BIN_CLUSTER_MATLAB' : 'hpcutil cluster matlablic',
         'NOTIFICATION_EMAILS': '',
         # Project database interface
         'PDB_USER'         : '',
