@@ -357,7 +357,7 @@ def get_cluster_node_properties(node_domain_suffix='dccn.nl', debug=False):
     s = Shell(debug=False)
 
     ## get scale factor for node speed
-    cmd = 'cluster-torqueconfig | grep NODECFG | grep SPEED | awk "{print $1 $2}"'
+    cmd = 'hpcutil cluster config | grep NODECFG | grep SPEED | awk "{print $1 $2}"'
     rc, output, m = s.cmd1(cmd, allowed_exit=[0,255], timeout=300)
 
     speeds = {}
@@ -556,6 +556,8 @@ def get_fs(s_cmd, debug=False):
 
 def get_qstat_jobs(s_cmd, node_domain_suffix='dccn.nl', debug=False):
     '''run cluster-qstat to get all job status and convert the output into job info dictionary'''
+
+    print s_cmd
 
     def __proc_walltime__(mytime):
         '''convert walltime to sum of minutes'''
