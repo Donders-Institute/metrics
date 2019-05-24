@@ -135,9 +135,9 @@ def getConfig(config_file='config.ini'):
         'DB_DATA_DIR'        : '/var/log/torque/torquemon_db',
         'TORQUE_LOG_DIR'     : '/home/common/torque/job_logs',
         'TORQUE_BATCH_QUEUES': 'short,medium,long',
-        'BIN_QSTAT_ALL'      : 'cluster-qstat',
-        'BIN_FSHARE_ALL'     : 'cluster-fairshare',
-        'BIN_CLUSTER_MATLAB' : 'cluster-matlab',
+        'BIN_QSTAT_ALL'      : 'hpcutil cluster qstat',
+        'BIN_FSHARE_ALL'     : '',
+        'BIN_CLUSTER_MATLAB' : 'hpcutil cluster matliblic',
         'NOTIFICATION_EMAILS': '',
         # Project database interface
         'PDB_USER'         : '',

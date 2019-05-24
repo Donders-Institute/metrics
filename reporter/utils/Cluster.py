@@ -658,8 +658,8 @@ def get_matlab_license_usage(s_cmd, node_domain_suffix='dccn.nl', debug=False):
     
     licenses = []
         
-    re_pkg_header = re.compile('^package:\s+(\S+)\s+.*')
-    re_lic = re.compile('^([a-z]+)\s+(\S+)\s+.*')
+    re_pkg_header = re.compile('^package\s+(\S+):\s+.*')
+    re_lic = re.compile('^|\s+([a-z]+)\s+|\s+(\S+)\s+|.*')
 
     s = Shell(debug=False)
     rc, output, m = s.cmd1(s_cmd, allowed_exit=[0,255], timeout=300)    
