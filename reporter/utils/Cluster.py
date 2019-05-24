@@ -659,10 +659,10 @@ def get_matlab_license_usage(s_cmd, node_domain_suffix='dccn.nl', debug=False):
     licenses = []
         
     re_pkg_header = re.compile('^package\s+(\S+):\s+.*')
-    re_lic = re.compile('^|\s+([a-z]+)\s+|\s+(\S+)\s+|.*')
+    re_lic = re.compile('^\|\s+([a-z]+)\s+\|\s+(\S+)\s+\|.*')    
 
     s = Shell(debug=False)
-    rc, output, m = s.cmd1(s_cmd, allowed_exit=[0,255], timeout=300)    
+    rc, output, m = s.cmd1(s_cmd, allowed_exit=[0,255], timeout=300)
     
     pkg = None
     i = 0
@@ -680,7 +680,7 @@ def get_matlab_license_usage(s_cmd, node_domain_suffix='dccn.nl', debug=False):
             continue
 
         u = m.group(1)
-        h = '%s.%s' % (m.group(2), node_domain_suffix)
+        h = '%s.%s' % (m.group(2).split('.')[0], node_domain_suffix)
         licenses.append( Job(jid=i, package=pkg, host=h, uid=u) )
         i += 1
         
