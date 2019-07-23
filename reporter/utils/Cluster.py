@@ -435,7 +435,15 @@ def get_cluster_node_properties(node_domain_suffix='dccn.nl', debug=False):
             if m:
                 data = m.group(1).split(',')
 
-                ## TODO: find a better way to get CPU type
+                ## TODO: find a better way to get CPU type, as here
+                ##       the implementation assumes the first 2 properties
+                ##       are always "cpu brand" and "cpu model". For example,
+                ##       
+                ##           properties = intel,e5-2680
+                ##
+                ##       or
+                ##           properties = amd,epyc7351
+                ##
                 n.cpu_type = ' '.join(data[0:2])
 
                 ## try to get the CPU speed factor if available
