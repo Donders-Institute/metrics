@@ -39,17 +39,33 @@ def getFilerUsageReport(cfg, fromDate, toDate):
         
             ## select actions that are not activted 
             qry  = 'select UNIX_TIMESTAMP(created),'
-            qry += 'SUM(aggregate_usedsize/1024) as used,'
-            qry += 'SUM(aggregate_availsize/1024) as avail,'
-            qry += 'SUM(aggregate_size/1024) as total '
-            qry += 'from fileserver_stats where DATE(created) between %s and %s '
-            qry += 'group by created'
+            qry += 'aggregate,'
+            qry += 'aggregate_usedsize/1024 as used,'
+            qry += 'aggregate_availsize/1024 as avail,'
+            qry += 'aggregate_size/1024 as total '
+            qry += 'from fileserver_stats where DATE(created) between %s and %s'
+            #qry += 'group by created'
 
             crs.execute(qry, [fromDate, toDate])
+           
+            ## a construction to avoid double counting multiple data points
+            ## that are reported for the same aggregate during the day.
+            aggrs = []
+            sum_used  = 0
+            sum_avail = 0
+            sum_total = 0
+            for (ts, aggr, used, avail, total) in crs:
 
-            for (ts, used, avail, total) in crs:
-                date = datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
-                data[date] = { 'used': long(used), 'avail': long(avail), 'total': long(total) }
+                if aggr in aggrs:
+                    continue
+
+                aggrs.append(aggr)
+                sum_used  += used
+                sum_avail += avail
+                sum_total += total
+
+            date = datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
+            data[date] = { 'used': long(sum_used), 'avail': long(sum_avail), 'total': long(sum_total) }
 
         except Exception, e:
             logging.exception('Project DB select failed')
