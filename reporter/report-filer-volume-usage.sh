@@ -72,8 +72,37 @@ function getObjectByName() {
     getObjectByHref $href ${@:4}
 }
 
+# make metric to OpenTSDB 
+function makeMetricTSDB() {
+    ts=$(date +%s)
+    m="[]"
+    for d in $@; do
+	volume=$(echo $d | awk -F ':' '{print $1}')
+	size=$(echo $d | awk -F ':' '{print $2}')
+	used=$(echo $d | awk -F ':' '{print $3}')
+
+
+        m=$(echo $m | jq --arg v "$volume" \
+                         --arg s "$size" \
+			 --arg t "$ts" \
+                         -c -M \
+			 '.+=[{"timestamp":($t|tonumber), "metric": "filer.volume.size", "value":($s|tonumber), "tag":{"volume":$v}}]' | \
+                      jq --arg v "$volume" \
+                         --arg s "$used" \
+			 --arg t "$ts" \
+                         -c -M \
+			 '.+=[{"timestamp":($t|tonumber), "metric": "filer.volume.used", "value":($s|tonumber), "tag":{"volume":$v}}]' )
+    done
+    echo $m
+}
+
+function pushMetricTSDB() {
+    [ -z $URL_TSDB ] && return 1
+    makeMetricTSDB $@ | ${CURL} -X POST --data-binary @- "${URL_TSDB}/api/put"
+}
+
 # make metric to Prometheus push gateway
-function makeMetric() {
+function makeMetricPrometheus() {
 
     echo "# TYPE filer_volume_size gauge"
     echo "# HELP filer_volume_size total volume size in bytes"
@@ -92,9 +121,9 @@ function makeMetric() {
     done
 }
 
-function pushMetric() {
+function pushMetricPrometheus() {
     [ -z $URL_PUSH_GATEWAY ] && return 1
-    makeMetric $@ | ${CURL} -X POST --data-binary @- "${URL_PUSH_GATEWAY}/metrics/job/filer_metrics"
+    makeMetricPrometheus $@ | ${CURL} -X POST --data-binary @- "${URL_PUSH_GATEWAY}/metrics/job/filer_metrics"
 }
 
 ## main program
@@ -119,4 +148,5 @@ for v in $@; do
     data+=( $vol:$size:$used )
 done
 
-pushMetric ${data[@]} || exit 1
+pushMetricPrometheus ${data[@]} || exit 1
+#makeMetricTSDB ${data[@]} | jq
