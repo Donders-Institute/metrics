@@ -2,6 +2,7 @@
 
 [ -z $API_HOST ] && API_HOST="https://irulan-mgmt.dccn.nl"
 [ -z $API_USER ] && API_USER="roadmin"
+[ -z $API_SVM  ] && API_SVM="fremem"
 
 API_URL="${API_HOST}/api"
 
@@ -10,7 +11,7 @@ CURL="curl -k -#"
 
 # Print usage message and document.
 function usage() {
-    echo "Usage: $1 <SVM> <VOLUME>" 1>&2
+    echo "Usage: $1 [<SVM>:]<VOLUME> ..." 1>&2
     cat << EOF >&2
 
 This script reports NetApp ontap volume quota and usage using 
@@ -20,6 +21,7 @@ API documentation: https://library.netapp.com/ecmdocs/ECMLP2856304/html/index.ht
 
 Environment variables:
             API_HOST: URL of the API host.
+            API_SVM:  default vserver name.
             API_USER: username for accessing the API server.
             API_PASS: password for accessing the API server (prompt for password if not set).
 EOF
@@ -58,49 +60,63 @@ function getObjectByHref() {
 # Get Object attributes by name in a generic way.
 function getObjectByName() {
     name=$1
-    api_ns=$2
+    svm=$2
+    api_ns=$3
 
-    href=$(getHrefByQuery "name=$name&svm=$API_SVM" $api_ns)
+    echo $name $svm $api_ns >> test.out
+
+    href=$(getHrefByQuery "name=$name&svm=$svm" $api_ns)
 
     [ "" == "$href" ] && echo "object not found: $name" >&2 && return 1
    
-    getObjectByHref $href ${@:3}
+    getObjectByHref $href ${@:4}
 }
 
-# push metric to Prometheus push gateway
+# make metric to Prometheus push gateway
+function makeMetric() {
+
+    echo "# TYPE filer_volume_size gauge"
+    echo "# HELP filer_volume_size total volume size in bytes"
+    for d in $@; do
+	volume=$(echo $d | awk -F ':' '{print $1}')
+	size=$(echo $d | awk -F ':' '{print $2}')
+        echo "filer_volume_size{volume=\"${volume}\"} $size"
+    done
+
+    echo "# TYPE filer_volume_used gauge"
+    echo "# HELP filer_volume_used used volume size in bytes"
+    for d in $@; do
+	volume=$(echo $d | awk -F ':' '{print $1}')
+	used=$(echo $d | awk -F ':' '{print $3}')
+        echo "filer_volume_used{volume=\"${volume}\"} $used"
+    done
+}
+
 function pushMetric() {
-
-    [ -z $URL_PUSH_GATEWAY ] && exit 1
-
-    volume=$1
-    size=$2
-    used=$3
-
-    cat << EOF | ${CURL} -X POST --data-binary @- "${URL_PUSH_GATEWAY}/metrics/job/filer_metrics"
-# TYPE filer_volume_size gauge
-# HELP filer_volume_size total volume size in bytes
-filer_volume_size{volume="${volume}"} $size
-# TYPE filer_volume_used gauge
-# HELP filer_volume_used used volume size in bytes
-filer_volume_used{volume="${volume}"} $used
-EOF
-
+    [ -z $URL_PUSH_GATEWAY ] && return 1
+    makeMetric $@ | ${CURL} -X POST --data-binary @- "${URL_PUSH_GATEWAY}/metrics/job/filer_metrics"
 }
 
 ## main program
-[ $# -lt 2 ] && usage $0 && exit 1
-API_SVM=$1
-vol=$2
+[ $# -lt 1 ] && usage $0 && exit 1
 
 ## prompt to ask for API_PASS if not set
 [ -z $API_PASS ] &&
     echo -n "Password for API user ($API_USER): " &&  read -s API_PASS && echo
 
-### For volume info.
-echo "Getting volume $vol ..." &&
-	sinfo=$(getObjectByName $vol "/storage/volumes" | jq '.space') || exit 1
+data=()
+for v in $@; do
+    svm=$API_SVM
+    vol=$( echo $v | awk -F ':' '{print $NF}' )
+    [ $( echo $v | awk -F ':' '{print NF}' ) -eq 2 ] &&
+	    svm=$( echo $v | awk -F ':' '{print $1}' )
 
-size=$( echo $sinfo | jq '.size' )
-used=$( echo $sinfo | jq '.used' )
+    ### For volume info.
+    echo "Getting volume $vol, vserver $svm ..." &&
+        sinfo=$(getObjectByName $vol $svm "/storage/volumes" | jq '.space') || exit 1
+    size=$( echo $sinfo | jq '.size' )
+    used=$( echo $sinfo | jq '.used' )
+    data+=( $vol:$size:$used )
+done
 
-pushMetric $vol $size $used || exit 1
+pushMetric ${data[@]} || exit 1
