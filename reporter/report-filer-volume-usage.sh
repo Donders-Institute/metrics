@@ -68,7 +68,7 @@ function getObjectByName() {
 }
 
 # push metric to Prometheus push gateway
-function pushMetricPrometheus() {
+function pushMetric() {
 
     [ -z $URL_PUSH_GATEWAY ] && exit 1
 
